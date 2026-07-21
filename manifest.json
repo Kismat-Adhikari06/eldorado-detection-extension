@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "MM2 Order Alert",
+  "version": "1.0",
+  "description": "Monitors Eldorado.gg sold orders page for Murder Mystery 2 orders and alerts you instantly.",
+  "permissions": [
+    "notifications",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.eldorado.gg/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.eldorado.gg/dashboard/orders/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

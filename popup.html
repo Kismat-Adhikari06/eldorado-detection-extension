@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 16px;
+      color: #ff4444;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      border: 1px solid #0f3460;
+    }
+    .status-label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .status-value {
+      font-size: 18px;
+      font-weight: bold;
+      margin-top: 4px;
+    }
+    .status-value.active { color: #00ff88; }
+    .status-value.inactive { color: #ff4444; }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-bottom: 8px;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-stop {
+      background: #ff4444;
+      color: white;
+    }
+    .btn-toggle {
+      background: #0f3460;
+      color: #e0e0e0;
+      border: 1px solid #1a4a8a;
+    }
+    .log {
+      background: #0d1117;
+      border-radius: 8px;
+      padding: 10px;
+      max-height: 150px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 11px;
+      line-height: 1.6;
+      border: 1px solid #21262d;
+    }
+    .log-entry { color: #8b949e; }
+    .log-entry.alert { color: #ff4444; font-weight: bold; }
+    .empty { color: #555; font-style: italic; }
+  </style>
+</head>
+<body>
+  <h1>MM2 Order Alert</h1>
+
+  <div class="status">
+    <div class="status-label">Monitoring</div>
+    <div id="statusValue" class="status-value active">Active</div>
+  </div>
+
+  <div class="status">
+    <div class="status-label">Alerts Triggered</div>
+    <div id="alertCount" class="status-value">0</div>
+  </div>
+
+  <button id="stopAlarm" class="btn btn-stop" style="display:none">Stop Alarm</button>
+  <button id="toggleBtn" class="btn btn-toggle">Pause Monitoring</button>
+  <button id="refreshBtn" class="btn btn-toggle">Refresh: ON (20s)</button>
+
+  <div class="status">
+    <div class="status-label">Log</div>
+    <div id="log" class="log">
+      <div class="empty">No activity yet. Open your Eldorado sold orders page.</div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
