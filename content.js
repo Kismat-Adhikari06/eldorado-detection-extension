@@ -1,75 +1,100 @@
 (() => {
   const TARGET = "pet simulator 99";
   const POLL_INTERVAL = 3000;
-  const REFRESH_INTERVAL = 20000;
+  const REFRESH_INTERVAL = 20;
+  const LOG_KEY = "mm2_log";
+  const COUNTDOWN_KEY = "mm2_refresh_countdown";
 
   let enabled = true;
   let autoRefresh = true;
-  let detected = false;  // true after target found — freezes everything
+  let detected = false;
   let refreshTimer = null;
   let pollTimer = null;
+  let countdownTimer = null;
+  let refreshCountdown = REFRESH_INTERVAL;
   let alarmCtx = null;
 
-  // --- Alarm audio via Web Audio API ---
+  // ---- LOGGING: write directly to storage so popup always sees it ----
+  function pushLog(text, isAlert) {
+    const ts = new Date().toLocaleTimeString();
+    const entry = { text: `[${ts}] ${text}`, alert: !!isAlert };
+    chrome.storage.local.get(LOG_KEY, (data) => {
+      const log = data[LOG_KEY] || [];
+      log.push(entry);
+      // Keep max 50
+      chrome.storage.local.set({ [LOG_KEY]: log.slice(-50) });
+    });
+    console.log(`[MM2 ${ts}] ${text}`);
+  }
+
+  // ---- ALARM: Web Audio API ----
   function playAlarm() {
     try {
       stopAlarm();
       alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
-      function makeSiren(freq, startTime, duration) {
+      function beep(freq, start, dur) {
         const osc = alarmCtx.createOscillator();
         const gain = alarmCtx.createGain();
-        osc.type = "square";
-        osc.frequency.setValueAtTime(freq, alarmCtx.currentTime + startTime);
-        gain.gain.setValueAtTime(0.6, alarmCtx.currentTime + startTime);
-        gain.gain.setValueAtTime(0, alarmCtx.currentTime + startTime + duration);
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(freq, alarmCtx.currentTime + start);
+        gain.gain.setValueAtTime(0.8, alarmCtx.currentTime + start);
+        gain.gain.linearRampToValueAtTime(0, alarmCtx.currentTime + start + dur);
         osc.connect(gain);
         gain.connect(alarmCtx.destination);
-        osc.start(alarmCtx.currentTime + startTime);
-        osc.stop(alarmCtx.currentTime + startTime + duration);
+        osc.start(alarmCtx.currentTime + start);
+        osc.stop(alarmCtx.currentTime + start + dur);
       }
-      function sirenLoop() {
+      function loop() {
         if (!alarmCtx) return;
-        for (let i = 0; i < 20; i++) {
-          makeSiren(900, i * 0.4, 0.2);
-          makeSiren(1300, i * 0.4 + 0.2, 0.2);
+        for (let i = 0; i < 25; i++) {
+          beep(800, i * 0.3, 0.15);
+          beep(1400, i * 0.3 + 0.15, 0.15);
         }
-        setTimeout(sirenLoop, 8000);
+        setTimeout(loop, 7500);
       }
-      sirenLoop();
-    } catch (e) {}
+      loop();
+    } catch (e) {
+      pushLog("Alarm failed: " + e.message, true);
+    }
   }
 
   function stopAlarm() {
     if (alarmCtx) { alarmCtx.close(); alarmCtx = null; }
   }
 
-  // --- Message handler: stop alarm / resume monitoring ---
-  chrome.runtime.onMessage.addListener((msg) => {
+  // ---- MESSAGES from popup ----
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === "stop_alarm") {
       stopAlarm();
+      pushLog("Alarm stopped.", false);
+      sendResponse({ ok: true });
     }
     if (msg.type === "resume_monitoring") {
       detected = false;
       enabled = true;
       autoRefresh = true;
-      chrome.storage.local.set({ mm2_enabled: true, mm2_auto_refresh: true });
+      refreshCountdown = REFRESH_INTERVAL;
+      chrome.storage.local.set({ mm2_enabled: true, mm2_auto_refresh: true, mm2_detected: false });
       startAutoRefresh();
       startPolling();
-      log("Monitoring RESUMED.");
-      // Scan immediately after resume
+      pushLog("Monitoring RESUMED.", false);
       setTimeout(check, 500);
+      sendResponse({ ok: true });
+    }
+    if (msg.type === "get_countdown") {
+      sendResponse({ countdown: refreshCountdown, detected: detected });
     }
   });
 
-  // --- Page just loaded: fresh start ---
-  chrome.storage.local.set({ mm2_log: [] });
-  chrome.runtime.sendMessage({ type: "page_refreshed" });
+  // ---- INIT ----
+  chrome.storage.local.set({ [LOG_KEY]: [] });
 
   chrome.storage.local.get(["mm2_enabled", "mm2_auto_refresh"], (data) => {
     if (data.mm2_enabled === false) enabled = false;
     if (data.mm2_auto_refresh === false) autoRefresh = false;
     startAutoRefresh();
     startPolling();
+    pushLog("Extension loaded. Watching for: " + TARGET, false);
   });
 
   chrome.storage.onChanged.addListener((changes) => {
@@ -80,24 +105,36 @@
     }
   });
 
+  // ---- AUTO REFRESH with countdown ----
   function startAutoRefresh() {
     if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+
     if (autoRefresh && !detected) {
-      refreshTimer = setInterval(() => {
-        if (detected) return;
-        log("Auto-refreshing page...");
-        location.reload();
-      }, REFRESH_INTERVAL);
+      refreshCountdown = REFRESH_INTERVAL;
+      countdownTimer = setInterval(() => {
+        if (detected) { clearInterval(countdownTimer); return; }
+        refreshCountdown--;
+        chrome.storage.local.set({ [COUNTDOWN_KEY]: refreshCountdown });
+        if (refreshCountdown <= 0) {
+          refreshCountdown = REFRESH_INTERVAL;
+          pushLog("Auto-refreshing page...", false);
+          location.reload();
+        }
+      }, 1000);
+    } else {
+      chrome.storage.local.set({ [COUNTDOWN_KEY]: 0 });
     }
   }
 
   function startPolling() {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     pollTimer = setInterval(() => {
-      if (!detected) check();
+      if (!detected && enabled) check();
     }, POLL_INTERVAL);
   }
 
+  // ---- ORDER DETECTION ----
   function getOrderTexts() {
     const texts = [];
     const selectors = [
@@ -129,17 +166,10 @@
     return [...new Set(texts)];
   }
 
-  function log(msg) {
-    const ts = new Date().toLocaleTimeString();
-    console.log(`[MM2 Alert ${ts}] ${msg}`);
-  }
-
   function check() {
     if (!enabled || detected) return;
 
     const texts = getOrderTexts();
-
-    // No log updates when scanning — only scan silently
     if (texts.length === 0) return;
 
     for (const text of texts) {
@@ -148,13 +178,17 @@
 
         // Freeze everything
         if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+        if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
         autoRefresh = false;
-        chrome.storage.local.set({ mm2_auto_refresh: false });
+        chrome.storage.local.set({ mm2_auto_refresh: false, [COUNTDOWN_KEY]: 0, mm2_detected: true });
 
-        // Play alarm immediately
+        const short = text.substring(0, 120);
+        pushLog("TARGET FOUND: " + short, true);
+
+        // Play alarm IMMEDIATELY
         playAlarm();
 
-        // Notify background + popup
+        // Notify background for Chrome notification
         chrome.runtime.sendMessage({
           type: "mm2_found",
           text: text,
@@ -165,17 +199,16 @@
     }
   }
 
-  // Initial fast scan — catch it early
-  setTimeout(check, 1000);
-  setTimeout(check, 2000);
+  // ---- STARTUP SCANS ----
+  setTimeout(check, 800);
+  setTimeout(check, 1500);
+  setTimeout(check, 3000);
 
   const observer = new MutationObserver(() => {
     if (!detected) {
       clearTimeout(window._mm2Debounce);
-      window._mm2Debounce = setTimeout(check, 1000);
+      window._mm2Debounce = setTimeout(check, 800);
     }
   });
   observer.observe(document.body, { childList: true, subtree: true });
-
-  log("Content script loaded. Watching for orders...");
 })();
