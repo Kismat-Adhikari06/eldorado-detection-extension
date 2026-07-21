@@ -8,13 +8,14 @@ const countdownEl = document.getElementById("countdown");
 
 // ---- LOAD STATE from storage ----
 function loadState() {
-  chrome.storage.local.get(["mm2_enabled", "mm2_auto_refresh", "mm2_log", "mm2_refresh_countdown", "mm2_alert_count"], (data) => {
+  chrome.storage.local.get(["mm2_enabled", "mm2_auto_refresh", "mm2_log", "mm2_refresh_countdown", "mm2_alert_count", "mm2_detected"], (data) => {
     const enabled = data.mm2_enabled !== false;
     const refresh = data.mm2_auto_refresh !== false;
     const countdown = data.mm2_refresh_countdown || 0;
     const count = data.mm2_alert_count || 0;
+    const isDetected = data.mm2_detected === true;
 
-    updateUI(enabled);
+    updateUI(enabled, isDetected);
     updateRefreshUI(refresh, countdown);
     alertCountEl.textContent = count;
 
@@ -59,8 +60,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     updateRefreshBtn(on);
   }
 
-  if (changes.mm2_enabled) {
-    updateUI(changes.mm2_enabled.newValue !== false);
+  if (changes.mm2_detected) {
+    const isDetected = changes.mm2_detected.newValue === true;
+    chrome.storage.local.get("mm2_enabled", (data) => {
+      updateUI(data.mm2_enabled !== false, isDetected);
+    });
   }
 
   if (changes.mm2_refresh_countdown) {
@@ -81,8 +85,12 @@ setInterval(() => {
   });
 }, 1000);
 
-function updateUI(enabled) {
-  if (enabled) {
+function updateUI(enabled, isDetected) {
+  if (isDetected) {
+    statusEl.textContent = "TARGET FOUND!";
+    statusEl.className = "status-value inactive";
+    toggleBtn.textContent = "Resume Monitoring";
+  } else if (enabled) {
     statusEl.textContent = "Active";
     statusEl.className = "status-value active";
     toggleBtn.textContent = "Pause Monitoring";

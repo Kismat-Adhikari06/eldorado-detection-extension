@@ -27,38 +27,70 @@
     console.log(`[MM2 ${ts}] ${text}`);
   }
 
-  // ---- ALARM: Web Audio API ----
+  // ---- ALARM: Web Audio API (retry until user has interacted with page) ----
+  let alarmRetry = null;
+
   function playAlarm() {
     try {
       stopAlarm();
       alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
-      function beep(freq, start, dur) {
-        const osc = alarmCtx.createOscillator();
-        const gain = alarmCtx.createGain();
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(freq, alarmCtx.currentTime + start);
-        gain.gain.setValueAtTime(0.8, alarmCtx.currentTime + start);
-        gain.gain.linearRampToValueAtTime(0, alarmCtx.currentTime + start + dur);
-        osc.connect(gain);
-        gain.connect(alarmCtx.destination);
-        osc.start(alarmCtx.currentTime + start);
-        osc.stop(alarmCtx.currentTime + start + dur);
+
+      if (alarmCtx.state === "suspended") {
+        alarmCtx.resume().then(() => {
+          if (alarmCtx && alarmCtx.state === "running") startSiren();
+          else retryAlarm();
+        }).catch(() => retryAlarm());
+      } else {
+        startSiren();
       }
-      function loop() {
-        if (!alarmCtx) return;
-        for (let i = 0; i < 25; i++) {
-          beep(800, i * 0.3, 0.15);
-          beep(1400, i * 0.3 + 0.15, 0.15);
-        }
-        setTimeout(loop, 7500);
-      }
-      loop();
     } catch (e) {
-      pushLog("Alarm failed: " + e.message, true);
+      retryAlarm();
     }
   }
 
+  function retryAlarm() {
+    if (alarmRetry) clearInterval(alarmRetry);
+    alarmRetry = setInterval(() => {
+      if (!detected) { clearInterval(alarmRetry); return; }
+      try {
+        stopAlarm();
+        alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
+        alarmCtx.resume().then(() => {
+          if (alarmCtx && alarmCtx.state === "running") {
+            clearInterval(alarmRetry);
+            startSiren();
+          }
+        }).catch(() => {});
+      } catch (e) {}
+    }, 1000);
+  }
+
+  function startSiren() {
+    function beep(freq, start, dur) {
+      const osc = alarmCtx.createOscillator();
+      const gain = alarmCtx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(freq, alarmCtx.currentTime + start);
+      gain.gain.setValueAtTime(0.8, alarmCtx.currentTime + start);
+      gain.gain.linearRampToValueAtTime(0, alarmCtx.currentTime + start + dur);
+      osc.connect(gain);
+      gain.connect(alarmCtx.destination);
+      osc.start(alarmCtx.currentTime + start);
+      osc.stop(alarmCtx.currentTime + start + dur);
+    }
+    function loop() {
+      if (!alarmCtx) return;
+      for (let i = 0; i < 25; i++) {
+        beep(800, i * 0.3, 0.15);
+        beep(1400, i * 0.3 + 0.15, 0.15);
+      }
+      setTimeout(loop, 7500);
+    }
+    loop();
+  }
+
   function stopAlarm() {
+    if (alarmRetry) { clearInterval(alarmRetry); alarmRetry = null; }
     if (alarmCtx) { alarmCtx.close(); alarmCtx = null; }
   }
 
