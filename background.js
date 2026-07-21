@@ -8,8 +8,8 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     chrome.notifications.create(`alert_${Date.now()}`, {
       type: "basic",
       iconUrl: chrome.runtime.getURL("icons/icon128.png"),
-      title: "TARGET ORDER DETECTED!",
-      message: `Pet Simulator 99 order found at ${msg.time}\n\n${msg.text.substring(0, 200)}`,
+      title: "MM2 ORDER DETECTED!",
+      message: `Murder Mystery 2 order found at ${msg.time}\n\n${msg.text.substring(0, 200)}`,
       priority: 2,
       requireInteraction: true,
     });

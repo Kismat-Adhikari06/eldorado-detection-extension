@@ -1,5 +1,5 @@
 (() => {
-  const TARGET = "pet simulator 99";
+  const TARGET = "murder mystery 2";
   const POLL_INTERVAL = 3000;
   const REFRESH_INTERVAL = 20;
   const LOG_KEY = "mm2_log";

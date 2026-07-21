@@ -9,7 +9,7 @@ This Chrome extension monitors your Eldorado.gg sold orders page and instantly a
 ## Features
 - Watches your Eldorado sold orders page in real-time using a MutationObserver
 - Auto-refreshes every 20 seconds (with live countdown in the popup)
-- Detects orders matching your target game (default: Pet Simulator 99)
+- Detects orders matching your target game (default: Murder Mystery 2)
 - Plays a loud siren alarm when a target order is found
 - Shows a Chrome notification popup
 - Logs all detected orders in the extension popup
@@ -48,7 +48,7 @@ This Chrome extension monitors your Eldorado.gg sold orders page and instantly a
 ## Changing the target game
 In `content.js`, change line 2:
 ```js
-const TARGET = "pet simulator 99";  // change to your target game
+const TARGET = "murder mystery 2";  // change to your target game
 ```
 
 ## Notes
