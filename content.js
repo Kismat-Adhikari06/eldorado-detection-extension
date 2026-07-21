@@ -14,6 +14,29 @@
   let refreshCountdown = REFRESH_INTERVAL;
   let alarmCtx = null;
 
+  // ---- PRIME AUDIO: create AudioContext on first page click ----
+  // Chrome blocks audio until user interacts with the page itself (not extension popup).
+  // We create a silent AudioContext on first click so the alarm works instantly later.
+  function primeAudio() {
+    if (alarmCtx) return;
+    try {
+      alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // Play a silent buffer to unlock audio
+      const buf = alarmCtx.createBuffer(1, 1, 22050);
+      const src = alarmCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(alarmCtx.destination);
+      src.start(0);
+      alarmCtx.resume();
+    } catch (e) {}
+  }
+
+  // Listen for ANY click on the page to prime audio
+  document.addEventListener("click", primeAudio, { once: true });
+  document.addEventListener("keydown", primeAudio, { once: true });
+  // Also try on page load in case user already interacted before extension loaded
+  setTimeout(primeAudio, 500);
+
   // ---- LOGGING: write directly to storage so popup always sees it ----
   function pushLog(text, isAlert) {
     const ts = new Date().toLocaleTimeString();
@@ -32,6 +55,12 @@
 
   function playAlarm() {
     try {
+      // If we have a primed context that's running, just use it
+      if (alarmCtx && alarmCtx.state === "running") {
+        startSiren();
+        return;
+      }
+      // Otherwise try to create/resume one
       stopAlarm();
       alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
 
