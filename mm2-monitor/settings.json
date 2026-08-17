@@ -1,0 +1,8 @@
+{
+  "target": "murder mystery 2",
+  "url": "https://www.eldorado.gg/dashboard/orders/sold?orderState=PendingDelivery&displayFilter=DisplaySellingOrders&orderGroup=Regular",
+  "poll_seconds": 3,
+  "refresh_seconds": 20,
+  "use_existing_chrome": true,
+  "chrome_profile": ""
+}

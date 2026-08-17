@@ -1,0 +1,4 @@
+mm2-monitor/build/
+mm2-monitor/dist/
+mm2-monitor/__pycache__/
+mm2-monitor/*.spec
