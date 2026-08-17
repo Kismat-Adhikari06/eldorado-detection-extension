@@ -217,116 +217,118 @@ class Monitor(threading.Thread):
         self._cmd.put(cmd)
 
     def run(self):
+        CDP_PORT = 9222
+        pw = None
+        browser = None
         try:
-            with sync_playwright() as p:
-                profile_dir = PROFILE_DIR
-                use_existing = USE_EXISTING_CHROME
+            pw = sync_playwright().start()
+            settings = self._load_settings()
+            target = settings.get("target", DEFAULT_TARGET)
+            profile = settings.get("chrome_profile") or default_chrome_profile()
+            chrome_path = find_chrome_exe()
 
-                if use_existing:
-                    real = CHROME_PROFILE if CHROME_PROFILE else default_chrome_profile()
-                    if os.path.isdir(real):
-                        profile_dir = real
-                        if chrome_running():
-                            self.events.put(
-                                (
-                                    "prompt_close_chrome",
-                                    "Close Chrome so the app can use your logged-in session, then press OK.",
-                                )
-                            )
-                            if not wait_for_chrome_close(timeout=180):
-                                self.events.put(
-                                    ("error", "Chrome is still open. Close it and restart the app.")
-                                )
-                                return
-                        self.events.put(("log", "Using your existing Chrome profile: " + profile_dir))
-                    else:
-                        self.events.put(
-                            (
-                                "log",
-                                "Existing Chrome profile not found - using a separate profile (you'll need to log in once).",
-                            )
-                        )
-                        profile_dir = PROFILE_DIR
-
-                ctx = p.chromium.launch_persistent_context(
-                    profile_dir,
-                    channel="chrome",
-                    headless=False,
-                    ignore_default_args=["--enable-automation"],
-                    args=[
-                        "--start-maximized",
-                        "--disable-blink-features=AutomationControlled",
-                    ],
-                )
-                ctx.add_init_script(STEALTH_JS)
-                page = ctx.pages[0] if ctx.pages else ctx.new_page()
-                self.events.put(("log", "Browser opened. Monitoring for: " + current_target))
-
-                self._detected = False
-                last_refresh = time.time()
-                waiting_for_user = False
-
-                self._goto(page)
-
-                while not self._stop_flag.is_set():
-                    self._handle_commands(page)
-
-                    if self._detected or self.paused:
+            if chrome_running():
+                try:
+                    browser = pw.chromium.connect_over_cdp(f"http://localhost:{CDP_PORT}", timeout=3000)
+                    self.events.put(("status", "Connected to Chrome"))
+                except Exception:
+                    self.events.put(("prompt_close_chrome", "Chrome must be relaunched with remote debugging. Close Chrome, then press OK."))
+                    if not wait_for_chrome_close(timeout=180):
+                        self.events.put(("error", "Chrome is still open."))
+                        return
+                    subprocess.Popen([chrome_path, f"--remote-debugging-port={CDP_PORT}", f"--user-data-dir={profile}"])
+                    self.events.put(("status", "Launching Chrome with remote debugging..."))
+                    for _ in range(15):
+                        if self._stop_flag.is_set():
+                            return
                         time.sleep(1)
-                        continue
-
-                    title = ""
+                        try:
+                            browser = pw.chromium.connect_over_cdp(f"http://localhost:{CDP_PORT}", timeout=3000)
+                            break
+                        except Exception:
+                            continue
+            else:
+                self.events.put(("status", "Launching Chrome..."))
+                subprocess.Popen([chrome_path, f"--remote-debugging-port={CDP_PORT}", f"--user-data-dir={profile}"])
+                for _ in range(15):
+                    if self._stop_flag.is_set():
+                        return
+                    time.sleep(1)
                     try:
-                        title = page.title()
+                        browser = pw.chromium.connect_over_cdp(f"http://localhost:{CDP_PORT}", timeout=3000)
+                        break
                     except Exception:
-                        pass
-
-                    challenged = is_challenged(page.url, title)
-                    if challenged:
-                        if not waiting_for_user:
-                            waiting_for_user = True
-                            self.on_dashboard = False
-                            self.events.put(
-                                (
-                                    "log",
-                                    "Login or captcha detected - please finish it in the browser window. Monitoring waits for you.",
-                                )
-                            )
-                        time.sleep(2)
                         continue
 
-                    if waiting_for_user:
-                        waiting_for_user = False
-                        self.on_dashboard = True
-                        self.events.put(("log", "Back on the orders page. Monitoring active."))
-                        last_refresh = time.time()
+            if not browser:
+                self.events.put(("error", "Could not connect to Chrome."))
+                return
 
-                    if self.auto_refresh:
-                        remaining = REFRESH_SECONDS - int(time.time() - last_refresh)
-                        if remaining <= 0:
-                            last_refresh = time.time()
-                            self.events.put(("log", "Auto-refreshing page..."))
-                            try:
-                                page.reload(timeout=30000, wait_until="domcontentloaded")
-                            except Exception:
-                                pass
-                        else:
-                            self.events.put(("countdown", remaining))
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.new_page()
+            page.add_init_script(STEALTH_JS)
+            self.events.put(("status", "Monitoring for: " + target))
 
-                    try:
-                        match = page.evaluate(DETECT_JS, current_target)
-                    except Exception:
-                        time.sleep(POLL_SECONDS)
-                        continue
+            self._detected = False
+            last_refresh = time.time()
+            waiting_for_user = False
 
-                    if match:
-                        self._detected = True
+            self._goto(page)
+
+            while not self._stop_flag.is_set():
+                self._handle_commands(page)
+
+                if self._detected or self.paused:
+                    time.sleep(1)
+                    continue
+
+                title = ""
+                try:
+                    title = page.title()
+                except Exception:
+                    pass
+
+                challenged = is_challenged(page.url, title)
+                if challenged:
+                    if not waiting_for_user:
+                        waiting_for_user = True
                         self.on_dashboard = False
-                        self.events.put(("detected", match))
-                        time.sleep(1)
-                        continue
+                        self.events.put(("log", "Login or captcha detected - please finish it in the browser window. Monitoring waits for you."))
+                    time.sleep(2)
+                    continue
 
+                if waiting_for_user:
+                    waiting_for_user = False
+                    self.on_dashboard = True
+                    self.events.put(("log", "Back on the orders page. Monitoring active."))
+                    last_refresh = time.time()
+
+                if self.auto_refresh:
+                    remaining = REFRESH_SECONDS - int(time.time() - last_refresh)
+                    if remaining <= 0:
+                        last_refresh = time.time()
+                        self.events.put(("log", "Auto-refreshing page..."))
+                        try:
+                            page.reload(timeout=30000, wait_until="domcontentloaded")
+                        except Exception:
+                            pass
+                    else:
+                        self.events.put(("countdown", remaining))
+
+                try:
+                    match = page.evaluate(DETECT_JS, target)
+                except Exception:
                     time.sleep(POLL_SECONDS)
+                    continue
+
+                if match:
+                    self._detected = True
+                    self.on_dashboard = False
+                    self.events.put(("detected", match))
+                    time.sleep(1)
+                    continue
+
+                time.sleep(POLL_SECONDS)
         except Exception as e:
             self.events.put(("error", str(e)))
         finally:
