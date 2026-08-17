@@ -64,15 +64,24 @@ def set_target(value):
 
 def default_chrome_profile():
     local = os.environ.get("LOCALAPPDATA", "")
-    candidates = [
-        os.path.join(local, "Google", "Chrome", "User Data", "Default"),
-        os.path.join(local, "Google", "Chrome", "User Data", "Profile 1"),
-        os.path.join(local, "Google", "Chrome", "User Data"),
-    ]
-    for path in candidates:
+    user_data = os.path.join(local, "Google", "Chrome", "User Data")
+    local_state = os.path.join(user_data, "Local State")
+    if os.path.isfile(local_state):
+        try:
+            with open(local_state, encoding="utf-8") as f:
+                state = json.load(f)
+            last = state.get("profile", {}).get("last_used", "")
+            if last:
+                path = os.path.join(user_data, last)
+                if os.path.isdir(path):
+                    return path
+        except Exception:
+            pass
+    for name in ("Default", "Profile 1", "Profile 2", "Profile 3"):
+        path = os.path.join(user_data, name)
         if os.path.isdir(path):
             return path
-    return candidates[0]
+    return os.path.join(user_data, "Default")
 
 
 def chrome_running():
